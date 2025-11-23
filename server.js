@@ -120,10 +120,7 @@ io.on('connection', (socket) => {
     if (typeof rest.hp === 'number') room.players[socket.id].hp = rest.hp;
 
     // broadcast to others in room
-    socket.to(roomId).emit('playerUpdate', {
-      id: socket.id,
-      x,
-      y,
+socket.broadcast.to(roomId).emit('playerUpdate', { id: socket.id, x, y,
       ...(('hp' in rest) ? { hp: rest.hp } : {})
     });
   });
