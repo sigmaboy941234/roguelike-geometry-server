@@ -86,13 +86,52 @@ io.on('connection', (socket) => {
   });
 
   // Player movement
-socket.on('playerInput', ({ roomId, x, y }) => {
+socket.on('joinRoom', ({ roomId, playerName }, ack) => {
   const room = rooms[roomId];
-  if (room?.players[socket.id]) {
-    room.players[socket.id].x = x;
-    room.players[socket.id].y = y;
-    // Broadcast to everyone in room EXCEPT sender
-    socket.broadcast.to(roomId).emit('playerUpdate', { id: socket.id, x, y });
+
+  if (room && Object.keys(room.players).length < 4) {
+    socket.join(roomId);
+
+    // Add the new player
+    room.players[socket.id] = {
+      name: playerName,
+      x: 0,
+      y: 0,
+      hp: 100,
+      isHost: false
+    };
+
+    // 🔥 SEND EXISTING PLAYERS TO THE NEW PLAYER
+    const existingPlayers = Object.entries(room.players)
+      .filter(([id]) => id !== socket.id) // Exclude self
+      .map(([id, state]) => ({ id, state }));
+
+    if (existingPlayers.length > 0) {
+      socket.emit('existingPlayers', existingPlayers);
+    }
+
+    // 🔥 BROADCAST NEW PLAYER TO OTHERS IN ROOM
+    socket.to(roomId).emit('playerJoined', {
+      id: socket.id,
+      state: room.players[socket.id]
+    });
+
+    if (typeof ack === 'function') {
+      ack({
+        success: true,
+        roomState: room,
+        playerId: socket.id
+      });
+    }
+
+  } else {
+    if (typeof ack === 'function') {
+      ack({
+        success: false,
+        error: 'Room full or invalid'
+      });
+    }
+    socket.emit('joinFailed', 'Room full or invalid');
   }
 });
 
