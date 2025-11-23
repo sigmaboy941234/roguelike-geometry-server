@@ -95,9 +95,13 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('playerShoot', ({ roomId, angle }) => {
-    io.to(roomId).emit('playerShoot', { id: socket.id, angle });
+socket.on('playerShoot', (payload) => {
+  const { roomId, ...shotData } = payload;
+  io.to(roomId).emit('playerShoot', { 
+    id: socket.id, 
+    ...shotData 
   });
+});
 
   // Host-only actions
   socket.on('waveCleared', ({ roomId }) => {
