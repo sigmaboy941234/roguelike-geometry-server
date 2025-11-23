@@ -13,9 +13,10 @@ const rooms = {};
 io.on('connection', (socket) => {
   console.log('Player connected:', socket.id);
 
-  // Host creates room
-  socket.on('hostRoom', ({ playerName }) => {
+  // Host creates room — NOW SUPPORTS ACK
+  socket.on('hostRoom', ({ playerName }, ack) => {
     const roomId = Math.random().toString(36).slice(2, 8).toUpperCase();
+
     rooms[roomId] = {
       hostId: socket.id,
       players: {
@@ -25,16 +26,33 @@ io.on('connection', (socket) => {
       wave: 1,
       seed: Math.random() * 1e9
     };
+
     socket.join(roomId);
-    socket.emit('youAreHost', { roomId });
+
     console.log(`${playerName} hosted room ${roomId}`);
+
+    // 🔥 REQUIRED — THIS IS WHAT YOUR FRONTEND WAITS FOR
+    if (typeof ack === "function") {
+      ack({
+        roomId,
+        isHost: true,
+        playerId: socket.id,
+        players: rooms[roomId].players,
+        roomState: rooms[roomId]
+      });
+    }
+
+    // you can keep this event if you still use it elsewhere
+    socket.emit('youAreHost', { roomId });
   });
 
-  // Join with code
-  socket.on('joinRoom', ({ roomId, playerName }) => {
+  // Join room — ADD ACK HERE TOO
+  socket.on('joinRoom', ({ roomId, playerName }, ack) => {
     const room = rooms[roomId];
+
     if (room && Object.keys(room.players).length < 4) {
       socket.join(roomId);
+
       room.players[socket.id] = {
         name: playerName,
         x: 0,
@@ -42,17 +60,32 @@ io.on('connection', (socket) => {
         hp: 100,
         isHost: false
       };
+
       io.to(roomId).emit('playerJoined', {
         id: socket.id,
         state: room.players[socket.id]
       });
-      socket.emit('joinedRoom', { roomState: room });
+
+      if (typeof ack === "function") {
+        ack({
+          success: true,
+          roomState: room,
+          playerId: socket.id
+        });
+      }
+
     } else {
+      if (typeof ack === "function") {
+        ack({
+          success: false,
+          error: "Room full or invalid"
+        });
+      }
       socket.emit('joinFailed', 'Room full or invalid');
     }
   });
 
-  // Player movement & shooting
+  // Player movement
   socket.on('playerInput', ({ roomId, x, y }) => {
     const room = rooms[roomId];
     if (room?.players[socket.id]) {
