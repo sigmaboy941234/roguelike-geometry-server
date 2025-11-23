@@ -91,8 +91,8 @@ socket.on('playerInput', ({ roomId, x, y }) => {
   if (room?.players[socket.id]) {
     room.players[socket.id].x = x;
     room.players[socket.id].y = y;
-    // Use io.to() to broadcast to ALL in room (including sender is fine, client will filter)
-    io.to(roomId).emit('playerUpdate', { id: socket.id, x, y });
+    // Broadcast to everyone in room EXCEPT sender
+    socket.broadcast.to(roomId).emit('playerUpdate', { id: socket.id, x, y });
   }
 });
 
