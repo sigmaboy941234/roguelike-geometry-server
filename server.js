@@ -166,6 +166,41 @@ io.on('connection', (socket) => {
   });
 
   //
+  // GAMEPLAY SYNC: Relay events from Host/Clients
+  //
+  socket.on('enemySpawn', (payload) => {
+    const { roomId } = payload;
+    if (!roomId) return;
+    // Relay to everyone else in the room
+    socket.to(roomId).emit('enemySpawn', payload);
+  });
+
+  socket.on('enemyUpdate', (payload) => {
+    const { roomId } = payload;
+    if (!roomId) return;
+    // Relay to everyone else (Client -> Host or Host -> Clients)
+    socket.to(roomId).emit('enemyUpdate', payload);
+  });
+
+  socket.on('bulletHit', (payload) => {
+    const { roomId } = payload;
+    if (!roomId) return;
+    socket.to(roomId).emit('bulletHit', payload);
+  });
+
+  socket.on('playerDeath', (payload) => {
+    const { roomId } = payload;
+    if (!roomId) return;
+    socket.to(roomId).emit('playerDeath', payload);
+  });
+
+  socket.on('gamePause', (payload) => {
+    const { roomId } = payload;
+    if (!roomId) return;
+    socket.to(roomId).emit('gamePause', payload);
+  });
+
+  //
   // DISCONNECT: remove player and notify others
   //
   socket.on('disconnect', () => {
