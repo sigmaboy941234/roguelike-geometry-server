@@ -1,3 +1,4 @@
+// server.js - copy & paste this file
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -13,7 +14,9 @@ const rooms = {};
 io.on('connection', (socket) => {
   console.log('Player connected:', socket.id);
 
-  // Host creates room (with ACK)
+  //
+  // HOST: create a new room and ACK the creator with authoritative state
+  //
   socket.on('hostRoom', ({ playerName }, ack) => {
     const roomId = Math.random().toString(36).slice(2, 8).toUpperCase();
 
@@ -21,7 +24,6 @@ io.on('connection', (socket) => {
       roomId,
       hostId: socket.id,
       players: {
-        // store player objects with id included
         [socket.id]: { id: socket.id, name: playerName, x: 0, y: 0, hp: 100, isHost: true }
       },
       skillTree: { damage: 1, fireRate: 1, speed: 1 },
@@ -30,25 +32,27 @@ io.on('connection', (socket) => {
     };
 
     socket.join(roomId);
+    console.log(`${playerName} hosted room ${roomId} (${socket.id})`);
 
-    console.log(`${playerName} hosted room ${roomId}`);
-
-    // ACK the host (client waits for this)
+    // ACK the host with authoritative roomState (client expects this)
     if (typeof ack === 'function') {
       ack({
+        success: true,
         roomId,
-        isHost: true,
         playerId: socket.id,
-        players: rooms[roomId].players,
-        roomState: rooms[roomId]
+        isHost: true,
+        roomState: rooms[roomId],
+        players: rooms[roomId].players
       });
     }
 
-    // (optional) emit youAreHost for backward compatibility
+    // optional compatibility event
     socket.emit('youAreHost', { roomId, playerId: socket.id });
   });
 
-  // Join room (single handler) — sends existing players and notifies others
+  //
+  // JOIN: add player to room, ACK with authoritative state, then notify others
+  //
   socket.on('joinRoom', ({ roomId, playerName }, ack) => {
     const room = rooms[roomId];
     if (!room) {
@@ -62,10 +66,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Join socket to room
-    socket.join(roomId);
-
-    // 1) Add new player to room state
+    // 1) Add new player to authoritative state (include id explicitly)
     room.players[socket.id] = {
       id: socket.id,
       name: playerName,
@@ -75,56 +76,61 @@ io.on('connection', (socket) => {
       isHost: false
     };
 
-    // 2) Send existing players (excluding the newcomer) to the new client
-    const existingPlayers = Object.entries(room.players)
-      .filter(([id]) => id !== socket.id)
-      .map(([id, state]) => ({ id, state }));
-    if (existingPlayers.length > 0) {
-      socket.emit('existingPlayers', existingPlayers);
+    // join the socket to the room
+    socket.join(roomId);
+
+    // 2) ACK the joining client with the authoritative room state
+    //    (This prevents race conditions where separate 'existingPlayers' later overwrites)
+    if (typeof ack === 'function') {
+      ack({
+        success: true,
+        roomId,
+        playerId: socket.id,
+        roomState: room,
+        players: room.players
+      });
     }
 
-    // 3) Broadcast this new player to everyone else in the room
+    // 3) Broadcast the new player to everyone else in the room so they spawn the newcomer
     socket.to(roomId).emit('playerJoined', {
       id: socket.id,
       state: room.players[socket.id]
     });
 
-    // 4) Ack the join with the authoritative room state
-    if (typeof ack === 'function') {
-      ack({
-        success: true,
-        roomId,
-        roomState: room,
-        playerId: socket.id,
-        players: room.players
-      });
-    }
-
-    console.log(`${playerName} joined ${roomId} (${socket.id})`);
+    console.log(`${playerName} (${socket.id}) joined room ${roomId}`);
   });
 
-  // Player movement & inputs -> broadcast to room as playerUpdate
+  //
+  // PLAYER INPUT: authoritative update + broadcast to others
+  //
   socket.on('playerInput', ({ roomId, x, y, ...rest }) => {
     const room = rooms[roomId];
     if (!room) return;
     if (!room.players[socket.id]) return;
 
+    // debug: log occasionally so you can watch server reception in Render logs
+    // (reduce log spam by only printing a portion)
+    if (Math.random() < 0.02) {
+      console.log('playerInput from', socket.id, 'room', roomId, '->', { x, y });
+    }
+
     // update authoritative state
     room.players[socket.id].x = x;
     room.players[socket.id].y = y;
-    // optionally update other fields if included
     if (typeof rest.hp === 'number') room.players[socket.id].hp = rest.hp;
 
-    // broadcast to others
+    // broadcast to others in room
     socket.to(roomId).emit('playerUpdate', {
       id: socket.id,
       x,
       y,
-      ...('hp' in rest ? { hp: rest.hp } : {})
+      ...(('hp' in rest) ? { hp: rest.hp } : {})
     });
   });
 
-  // Player shooting (already working)
+  //
+  // SHOOT: broadcast shot info (keeps working as before)
+  //
   socket.on('playerShoot', (payload) => {
     const { roomId, ...shotData } = payload || {};
     if (!roomId) return;
@@ -134,7 +140,9 @@ io.on('connection', (socket) => {
     });
   });
 
+  //
   // Host-only actions
+  //
   socket.on('waveCleared', ({ roomId }) => {
     const room = rooms[roomId];
     if (socket.id === room?.hostId) {
@@ -157,17 +165,22 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Disconnect: remove player and notify others
+  //
+  // DISCONNECT: remove player and notify others
+  //
   socket.on('disconnect', () => {
     Object.keys(rooms).forEach((rid) => {
       const room = rooms[rid];
       if (!room) return;
       if (room.players && room.players[socket.id]) {
+        const name = room.players[socket.id].name;
         delete room.players[socket.id];
         io.to(rid).emit('playerLeft', { id: socket.id });
+        console.log(`Player ${name || socket.id} left room ${rid}`);
         // if room empty, remove it
         if (Object.keys(room.players).length === 0) {
           delete rooms[rid];
+          console.log(`Room ${rid} removed (empty)`);
         }
       }
     });
