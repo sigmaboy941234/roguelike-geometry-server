@@ -86,14 +86,15 @@ io.on('connection', (socket) => {
   });
 
   // Player movement
-  socket.on('playerInput', ({ roomId, x, y }) => {
-    const room = rooms[roomId];
-    if (room?.players[socket.id]) {
-      room.players[socket.id].x = x;
-      room.players[socket.id].y = y;
-      socket.to(roomId).emit('playerUpdate', { id: socket.id, x, y });
-    }
-  });
+socket.on('playerInput', ({ roomId, x, y }) => {
+  const room = rooms[roomId];
+  if (room?.players[socket.id]) {
+    room.players[socket.id].x = x;
+    room.players[socket.id].y = y;
+    // Use io.to() to broadcast to ALL in room (including sender is fine, client will filter)
+    io.to(roomId).emit('playerUpdate', { id: socket.id, x, y });
+  }
+});
 
 socket.on('playerShoot', (payload) => {
   const { roomId, ...shotData } = payload;
